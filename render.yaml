@@ -1,0 +1,36 @@
+services:
+  - type: web
+    name: cs-auditor-backend
+    runtime: docker
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: .
+    plan: starter
+    envVars:
+      - key: DATABASE_URL
+        value: sqlite:////data/db/complaints.db
+      - key: OPENAI_API_KEY
+        sync: false          # set in Render dashboard — never committed
+      - key: OPENAI_MODEL
+        value: gpt-4.1-mini
+      - key: OPENAI_BASE_URL
+        value: https://api.openai.com/v1
+    disk:
+      name: sqlite-data
+      mountPath: /data/db
+      sizeGB: 1
+    healthCheckPath: /health
+
+  - type: web
+    name: cs-auditor-frontend
+    runtime: docker
+    dockerfilePath: ./frontend/Dockerfile
+    dockerContext: .
+    plan: starter
+    envVars:
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: API_BASE_URL
+        # After first deploy, replace with the backend's Render internal URL:
+        # https://cs-auditor-backend.onrender.com
+        # or use fromService once the backend service exists.
+        value: https://cs-auditor-backend.onrender.com
