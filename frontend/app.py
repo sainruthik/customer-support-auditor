@@ -8,7 +8,7 @@ import pandas as pd
 import plotly.express as px
 import streamlit as st
 
-from api_client import fetch_complaints, fetch_json, post_json, upload_csv
+from api_client import clear_complaints, fetch_complaints, fetch_json, post_json, upload_csv
 
 st.set_page_config(page_title="Customer Support Ticket Auditor", layout="wide")
 st.title("Customer Support Ticket Auditor")
@@ -102,6 +102,8 @@ st.subheader("Recent Complaints")
 
 st.session_state.setdefault("page", 0)
 st.session_state.setdefault("page_size", 25)
+st.session_state.setdefault("last_analysis", None)
+st.session_state.setdefault("last_upload", None)
 
 # Page size selector — reset page when size changes.
 prev_size = st.session_state.get("_prev_page_size", st.session_state["page_size"])
@@ -150,35 +152,72 @@ st.divider()
 
 # ── Analyze new complaint ─────────────────────────────────────────────────────
 st.subheader("Analyze New Complaint")
+
+# Show last analysis result if present (persists across rerun).
+if st.session_state.get("last_analysis"):
+    r = st.session_state["last_analysis"]
+    st.success(f"Complaint saved — ID: `{r.get('complaint_id')}`")
+    col_a, col_b, col_c = st.columns(3)
+    col_a.metric("Sentiment", r.get("customer_sentiment", "—").capitalize())
+    col_b.metric("Topic", r.get("topic", "—").replace("_", " ").title())
+    col_c.metric("Priority", r.get("priority", "—").capitalize())
+    res_col, fol_col = st.columns(2)
+    res_col.metric("Problem Resolved", "Yes" if r.get("problem_resolved") else "No")
+    fol_col.metric("Needs Follow-up", "Yes" if r.get("needs_followup") else "No")
+    st.info(f"**Summary:** {r.get('summary', '')}")
+    if st.button("Clear result"):
+        st.session_state["last_analysis"] = None
+        st.rerun()
+    st.divider()
+
 new_text = st.text_area("Complaint text", placeholder="Enter customer complaint text here...")
 if st.button("Analyze and Save"):
     if not new_text.strip():
         st.error("Please enter complaint text.")
     else:
-        try:
-            saved = post_json("/analyze-text", {"complaint_text": new_text})
-            st.success(f"Saved complaint {saved.get('complaint_id')}")
-            st.session_state["page"] = 0
-            st.rerun()
-        except error.HTTPError as exc:
-            st.error(f"Request failed: {exc.read().decode('utf-8')}")
-        except error.URLError:
-            st.error("Backend API is not reachable.")
+        with st.spinner("Analyzing complaint..."):
+            try:
+                saved = post_json("/analyze-text", {"complaint_text": new_text})
+                st.session_state["last_analysis"] = saved
+                st.session_state["page"] = 0
+                st.rerun()
+            except error.HTTPError as exc:
+                st.error(f"Request failed: {exc.read().decode('utf-8')}")
+            except error.URLError:
+                st.error("Backend API is not reachable.")
 
 st.divider()
 
 # ── Upload CSV ────────────────────────────────────────────────────────────────
 st.subheader("Upload Complaints CSV")
+
+if st.session_state.get("last_upload"):
+    u = st.session_state["last_upload"]
+    processed = u.get("processed", 0)
+    failed = u.get("failed", 0)
+    total_rows = processed + failed
+    up_col1, up_col2, up_col3 = st.columns(3)
+    up_col1.metric("Total Rows", total_rows)
+    up_col2.metric("Processed", processed)
+    up_col3.metric("Failed", failed)
+    if failed > 0:
+        st.warning(f"{failed} row(s) failed — likely duplicate complaint IDs already in the database.")
+    else:
+        st.success("All rows processed successfully.")
+    if st.button("Clear upload result"):
+        st.session_state["last_upload"] = None
+        st.rerun()
+    st.divider()
+
 st.caption("Required column: `complaint_text`. Optional: `complaint_id`, `customer_id`, `channel`, `created_at`. Large files may take a minute while complaints are analyzed.")
 uploaded = st.file_uploader("Choose a CSV file", type=["csv"])
 if uploaded is not None:
     if st.button("Upload and Analyze"):
-        with st.spinner("Uploading and analyzing complaints — this may take a moment..."):
+        with st.spinner("Clearing existing data and analyzing new complaints..."):
             try:
+                clear_complaints()
                 result = upload_csv(uploaded.read(), uploaded.name)
-                processed = result.get("processed", 0)
-                failed = result.get("failed", 0)
-                st.success(f"Done — {processed} processed, {failed} failed.")
+                st.session_state["last_upload"] = result
                 st.session_state["page"] = 0
                 st.rerun()
             except Exception as exc:

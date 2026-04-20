@@ -39,6 +39,13 @@ def fetch_complaints(skip: int = 0, limit: int = 25) -> tuple[list[dict], int | 
     return rows, total
 
 
+def clear_complaints() -> dict:
+    """DELETE all complaints from the database."""
+    resp = requests.delete(f"{API_BASE_URL}/complaints", timeout=30)
+    resp.raise_for_status()
+    return resp.json()
+
+
 def upload_csv(file_bytes: bytes, filename: str) -> dict:
     """POST multipart CSV to /upload-csv; returns {processed, failed}."""
     resp = requests.post(

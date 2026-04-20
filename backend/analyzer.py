@@ -1,19 +1,17 @@
-"""Complaint analyzer with OpenAI-first logic and rule-based fallback."""
+"""Complaint analyzer: CrewAI multi-agent pipeline with rule-based fallback."""
 
 from __future__ import annotations
 
-import json
 import os
 from typing import Any
 
-import httpx
 from dotenv import load_dotenv
+
+from backend.agents_pipeline import run_agent_pipeline
 
 load_dotenv()
 
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
-OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4.1-mini")
-OPENAI_BASE_URL = os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1").rstrip("/")
 
 REQUIRED_FIELDS = {
     "customer_sentiment",
@@ -29,6 +27,7 @@ ALLOWED_TOPICS = {
     "billing_issue",
     "delayed_delivery",
     "damaged_product",
+    "technical_support",
     "refund_request",
     "account_issue",
     "general",
@@ -37,7 +36,7 @@ ALLOWED_PRIORITIES = {"low", "medium", "high"}
 
 
 def _rule_based_analyze(text: str) -> dict:
-    """Rule-based backup analyzer used when LLM output is invalid/unavailable."""
+    """Rule-based backup analyzer used when pipeline output is invalid/unavailable."""
     normalized = text.lower().strip()
 
     topic_rules = {
@@ -166,19 +165,6 @@ def _rule_based_analyze(text: str) -> dict:
     }
 
 
-def _extract_json_block(raw_text: str) -> str:
-    """Extract JSON object text from a model response."""
-    raw_text = raw_text.strip()
-    if raw_text.startswith("{") and raw_text.endswith("}"):
-        return raw_text
-
-    start = raw_text.find("{")
-    end = raw_text.rfind("}")
-    if start == -1 or end == -1 or end <= start:
-        raise ValueError("No JSON object found in model output.")
-    return raw_text[start : end + 1]
-
-
 def _normalize_and_validate(payload: dict[str, Any]) -> dict:
     """Validate required fields, enums, booleans, and summary text."""
     if not REQUIRED_FIELDS.issubset(payload.keys()):
@@ -190,7 +176,6 @@ def _normalize_and_validate(payload: dict[str, Any]) -> dict:
     priority = str(payload["priority"]).strip().lower()
     summary = str(payload["summary"]).strip()
 
-    # Enforce enum values exactly as expected by the API contract.
     if customer_sentiment not in ALLOWED_SENTIMENTS:
         raise ValueError("customer_sentiment is invalid.")
     if topic not in ALLOWED_TOPICS:
@@ -198,7 +183,6 @@ def _normalize_and_validate(payload: dict[str, Any]) -> dict:
     if priority not in ALLOWED_PRIORITIES:
         raise ValueError("priority is invalid.")
 
-    # LLM output must contain true booleans for these flags.
     problem_resolved = payload["problem_resolved"]
     needs_followup = payload["needs_followup"]
     if not isinstance(problem_resolved, bool):
@@ -219,88 +203,24 @@ def _normalize_and_validate(payload: dict[str, Any]) -> dict:
     }
 
 
-def _extract_text_from_openai_response(payload: dict[str, Any]) -> str:
-    """Extract generated text from OpenAI Responses API JSON payload."""
-    direct_text = payload.get("output_text")
-    if isinstance(direct_text, str) and direct_text.strip():
-        return direct_text.strip()
-
-    output_items = payload.get("output", [])
-    if isinstance(output_items, list):
-        for item in output_items:
-            if not isinstance(item, dict):
-                continue
-            content_items = item.get("content", [])
-            if not isinstance(content_items, list):
-                continue
-            for content in content_items:
-                if not isinstance(content, dict):
-                    continue
-                text_value = content.get("text")
-                if isinstance(text_value, str) and text_value.strip():
-                    return text_value.strip()
-
-    raise ValueError("Could not extract model text from OpenAI response.")
-
-
-def _analyze_with_openai(text: str) -> dict:
-    """Call OpenAI Responses API and return validated structured analysis."""
+def _analyze_with_crew(text: str) -> dict:
+    """Run CrewAI pipeline and validate output against the API contract."""
     if not OPENAI_API_KEY:
         raise ValueError("OPENAI_API_KEY is not set.")
-
-    # Prompt forces a strict JSON object so parsing is deterministic.
-    prompt = f"""
-You are a customer support complaint classifier.
-Return strict JSON only. No markdown. No explanation.
-
-Required JSON schema:
-{{
-  "customer_sentiment": "negative|neutral|positive",
-  "topic": "billing_issue|delayed_delivery|damaged_product|refund_request|account_issue|general",
-  "priority": "low|medium|high",
-  "problem_resolved": true or false,
-  "needs_followup": true or false,
-  "summary": "short summary (max 120 chars)"
-}}
-
-Complaint text:
-\"\"\"{text}\"\"\"
-""".strip()
-
-    response = httpx.post(
-        f"{OPENAI_BASE_URL}/responses",
-        headers={
-            "Authorization": f"Bearer {OPENAI_API_KEY}",
-            "Content-Type": "application/json",
-        },
-        json={
-            "model": OPENAI_MODEL,
-            "input": prompt,
-            "temperature": 0,
-        },
-        timeout=20,
-    )
-    response.raise_for_status()
-
-    # Parse model text, then extract/validate the JSON object.
-    wrapper = response.json()
-    model_text = _extract_text_from_openai_response(wrapper)
-    parsed = json.loads(_extract_json_block(model_text))
-    return _normalize_and_validate(parsed)
+    raw = run_agent_pipeline(text)
+    return _normalize_and_validate(raw)
 
 
 def analyze_complaint(text: str) -> dict:
     """
-    Analyze complaint text using OpenAI structured extraction.
+    Analyze complaint text using the CrewAI multi-agent pipeline.
 
-    Fallback behavior:
-    - If OpenAI is unavailable
-    - If response is not valid JSON
-    - If required fields are missing/invalid
-    then use the local rule-based analyzer.
+    Fallback behavior — rule-based analyzer is used when:
+    - OPENAI_API_KEY is absent
+    - Pipeline raises any exception
+    - Pipeline output fails validation
     """
     try:
-        return _analyze_with_openai(text)
+        return _analyze_with_crew(text)
     except Exception:
-        # Keep the API stable even when model/network/JSON parsing fails.
         return _rule_based_analyze(text)

@@ -9,3 +9,4 @@ pandas
 requests
 httpx
 python-multipart
+crewai

@@ -1,7 +1,7 @@
 import asyncio
 import csv
 import io
-from datetime import datetime, UTC
+from datetime import datetime, timezone
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, Response, UploadFile
@@ -25,15 +25,15 @@ class AnalyzeTextRequest(BaseModel):
 
 
 def _parse_created_at(value: str | None) -> datetime:
-    """Parse CSV timestamp if present; otherwise use current UTC time."""
+    """Parse CSV timestamp if present; otherwise use current timezone.utc time."""
     if not value:
-        return datetime.now(UTC)
+        return datetime.now(timezone.utc)
     try:
         parsed = datetime.fromisoformat(value.strip())
         # Keep timezone-aware timestamps for consistency in API responses.
-        return parsed if parsed.tzinfo else parsed.replace(tzinfo=UTC)
+        return parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
     except ValueError:
-        return datetime.now(UTC)
+        return datetime.now(timezone.utc)
 
 
 def _serialize_complaint(complaint: Complaint) -> ComplaintResponse:
@@ -68,7 +68,7 @@ def analyze_text(payload: AnalyzeTextRequest, db: Session = Depends(get_db)) -> 
         customer_id="unknown",
         complaint_text=payload.complaint_text,
         channel="unknown",
-        created_at=datetime.now(UTC),
+        created_at=datetime.now(timezone.utc),
         customer_sentiment=analysis["customer_sentiment"],
         topic=analysis["topic"],
         priority=analysis["priority"],
@@ -150,6 +150,14 @@ async def upload_csv(file: UploadFile = File(...), db: Session = Depends(get_db)
             failed += 1
 
     return {"processed": processed, "failed": failed}
+
+
+@router.delete("/complaints", status_code=200)
+def delete_all_complaints(db: Session = Depends(get_db)) -> dict[str, int]:
+    """Delete all complaints from the database."""
+    deleted = db.query(Complaint).delete()
+    db.commit()
+    return {"deleted": deleted}
 
 
 @router.get("/complaints", response_model=list[ComplaintResponse])

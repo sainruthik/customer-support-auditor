@@ -5,8 +5,6 @@ from __future__ import annotations
 import pytest
 
 from backend.analyzer import (
-    _extract_json_block,
-    _extract_text_from_openai_response,
     _normalize_and_validate,
     _rule_based_analyze,
     analyze_complaint,
@@ -121,26 +119,6 @@ def test_rule_based_summary_truncated_at_120():
     assert result["summary"].endswith("...")
 
 
-# ── _extract_json_block ───────────────────────────────────────────────────────
-
-@pytest.mark.unit
-def test_extract_json_block_pure_json():
-    raw = '{"key": "value"}'
-    assert _extract_json_block(raw) == raw
-
-
-@pytest.mark.unit
-def test_extract_json_block_wrapped_in_prose():
-    raw = 'Here is the result:\n{"key": "value"}\nEnd.'
-    assert _extract_json_block(raw) == '{"key": "value"}'
-
-
-@pytest.mark.unit
-def test_extract_json_block_no_json_raises():
-    with pytest.raises(ValueError, match="No JSON object found"):
-        _extract_json_block("plain text with no braces")
-
-
 # ── _normalize_and_validate ───────────────────────────────────────────────────
 
 VALID_PAYLOAD = {
@@ -221,37 +199,57 @@ def test_normalize_strips_whitespace_and_lowercases():
     assert result["priority"] == "high"
 
 
-# ── _extract_text_from_openai_response ────────────────────────────────────────
-
 @pytest.mark.unit
-def test_extract_text_output_text_shortcut():
-    payload = {"output_text": "hello"}
-    assert _extract_text_from_openai_response(payload) == "hello"
-
-
-@pytest.mark.unit
-def test_extract_text_nested_output():
-    payload = {
-        "output": [
-            {"content": [{"text": "nested result"}]}
-        ]
-    }
-    assert _extract_text_from_openai_response(payload) == "nested result"
-
-
-@pytest.mark.unit
-def test_extract_text_missing_structure_raises():
-    with pytest.raises(ValueError, match="Could not extract"):
-        _extract_text_from_openai_response({"output": []})
+def test_normalize_accepts_technical_support_topic():
+    payload = {**VALID_PAYLOAD, "topic": "technical_support"}
+    result = _normalize_and_validate(payload)
+    assert result["topic"] == "technical_support"
 
 
 # ── analyze_complaint: fallback behavior ─────────────────────────────────────
 
 @pytest.mark.unit
-def test_analyze_complaint_falls_back_when_openai_raises(monkeypatch):
+def test_analyze_complaint_no_api_key_uses_fallback(monkeypatch):
     import backend.analyzer as mod
-    monkeypatch.setattr(mod, "_analyze_with_openai", lambda _: (_ for _ in ()).throw(RuntimeError("boom")))
+    monkeypatch.setattr(mod, "OPENAI_API_KEY", "")
     text = "My billing is wrong"
     result = analyze_complaint(text)
     expected = _rule_based_analyze(text)
     assert result == expected
+
+
+@pytest.mark.unit
+def test_analyze_complaint_crew_raises_uses_fallback(monkeypatch):
+    import backend.analyzer as mod
+    monkeypatch.setattr(mod, "OPENAI_API_KEY", "sk-fake")
+    monkeypatch.setattr(mod, "run_agent_pipeline", lambda _: (_ for _ in ()).throw(RuntimeError("crew failed")))
+    text = "My billing is wrong"
+    result = analyze_complaint(text)
+    expected = _rule_based_analyze(text)
+    assert result == expected
+
+
+@pytest.mark.unit
+def test_analyze_complaint_crew_success(monkeypatch):
+    import backend.analyzer as mod
+    monkeypatch.setattr(mod, "OPENAI_API_KEY", "sk-fake")
+    fake_output = {
+        "customer_sentiment": "negative",
+        "topic": "billing_issue",
+        "priority": "high",
+        "problem_resolved": False,
+        "needs_followup": True,
+        "summary": "Customer was charged twice.",
+    }
+    monkeypatch.setattr(mod, "run_agent_pipeline", lambda _: fake_output)
+    result = analyze_complaint("I was charged twice")
+    assert result == fake_output
+
+
+@pytest.mark.unit
+def test_analyze_complaint_output_has_required_fields(monkeypatch):
+    import backend.analyzer as mod
+    monkeypatch.setattr(mod, "OPENAI_API_KEY", "")
+    result = analyze_complaint("Some complaint text")
+    from backend.analyzer import REQUIRED_FIELDS
+    assert REQUIRED_FIELDS.issubset(result.keys())
