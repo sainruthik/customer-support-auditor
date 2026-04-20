@@ -1,4 +1,4 @@
-"""Complaint analyzer: CrewAI multi-agent pipeline with rule-based fallback."""
+"""Complaint analyzer: OpenAI multi-agent pipeline with rule-based fallback."""
 
 from __future__ import annotations
 
@@ -203,8 +203,8 @@ def _normalize_and_validate(payload: dict[str, Any]) -> dict:
     }
 
 
-def _analyze_with_crew(text: str) -> dict:
-    """Run CrewAI pipeline and validate output against the API contract."""
+def _analyze_with_openai(text: str) -> dict:
+    """Run OpenAI pipeline and validate output against the API contract."""
     if not OPENAI_API_KEY:
         raise ValueError("OPENAI_API_KEY is not set.")
     raw = run_agent_pipeline(text)
@@ -213,7 +213,7 @@ def _analyze_with_crew(text: str) -> dict:
 
 def analyze_complaint(text: str) -> dict:
     """
-    Analyze complaint text using the CrewAI multi-agent pipeline.
+    Analyze complaint text using the OpenAI multi-agent pipeline.
 
     Fallback behavior — rule-based analyzer is used when:
     - OPENAI_API_KEY is absent
@@ -221,6 +221,6 @@ def analyze_complaint(text: str) -> dict:
     - Pipeline output fails validation
     """
     try:
-        return _analyze_with_crew(text)
+        return _analyze_with_openai(text)
     except Exception:
         return _rule_based_analyze(text)
