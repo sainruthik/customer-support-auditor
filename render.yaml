@@ -11,7 +11,7 @@ services:
       - key: OPENAI_API_KEY
         sync: false          # set in Render dashboard — never committed
       - key: OPENAI_MODEL
-        value: gpt-4.1-mini
+        value: gpt-4o-mini
       - key: OPENAI_BASE_URL
         value: https://api.openai.com/v1
     disk:
