@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import csv
 import sys
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -17,8 +17,9 @@ from backend.models import Complaint
 
 
 def _parse_datetime(value: str) -> datetime:
-    """Parse CSV datetime values like '2024-11-28 19:50:26'."""
-    return datetime.fromisoformat(value.strip())
+    """Parse CSV datetime values like '2024-11-28 19:50:26' as UTC-aware."""
+    parsed = datetime.fromisoformat(value.strip())
+    return parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
 
 
 def seed_from_csv(csv_path: Path) -> tuple[int, int]:
@@ -51,7 +52,7 @@ def seed_from_csv(csv_path: Path) -> tuple[int, int]:
                     existing.customer_id = (row.get("customer_id") or "unknown").strip() or "unknown"
                     existing.complaint_text = complaint_text
                     existing.channel = (row.get("channel") or "unknown").strip() or "unknown"
-                    existing.created_at = _parse_datetime(row.get("created_at") or datetime.now().isoformat())
+                    existing.created_at = _parse_datetime(row.get("created_at") or datetime.now(timezone.utc).isoformat())
                     existing.customer_sentiment = analysis["customer_sentiment"]
                     existing.topic = analysis["topic"]
                     existing.priority = analysis["priority"]
@@ -66,7 +67,7 @@ def seed_from_csv(csv_path: Path) -> tuple[int, int]:
                             customer_id=(row.get("customer_id") or "unknown").strip() or "unknown",
                             complaint_text=complaint_text,
                             channel=(row.get("channel") or "unknown").strip() or "unknown",
-                            created_at=_parse_datetime(row.get("created_at") or datetime.now().isoformat()),
+                            created_at=_parse_datetime(row.get("created_at") or datetime.now(timezone.utc).isoformat()),
                             customer_sentiment=analysis["customer_sentiment"],
                             topic=analysis["topic"],
                             priority=analysis["priority"],

@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import logging
 import os
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 from dotenv import load_dotenv
 
@@ -222,5 +225,10 @@ def analyze_complaint(text: str) -> dict:
     """
     try:
         return _analyze_with_openai(text)
-    except Exception:
+    except Exception as exc:
+        logger.error(
+            "OpenAI analyzer failed; falling back to rule-based: %s",
+            exc,
+            exc_info=True,
+        )
         return _rule_based_analyze(text)

@@ -23,7 +23,7 @@ def client(monkeypatch):
 
     monkeypatch.setattr(
         analyzer_module,
-        "_analyze_with_crew",
+        "_analyze_with_openai",
         lambda _text: (_ for _ in ()).throw(RuntimeError("patched")),
     )
 

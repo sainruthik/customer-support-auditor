@@ -117,7 +117,7 @@ tests/
    ```
    DATABASE_URL=sqlite:///./test.db
    OPENAI_API_KEY=sk-...
-   OPENAI_MODEL=gpt-4.1-mini          # optional, default shown
+   OPENAI_MODEL=gpt-4o-mini           # optional, default shown
    OPENAI_BASE_URL=https://api.openai.com/v1  # optional, default shown
    ```
 
@@ -218,7 +218,7 @@ Each complaint is classified into:
 | Field | Values |
 |-------|--------|
 | `customer_sentiment` | `positive` / `neutral` / `negative` |
-| `topic` | `billing_issue` / `delayed_delivery` / `damaged_product` / `refund_request` / `account_issue` / `general` |
+| `topic` | `billing_issue` / `delayed_delivery` / `damaged_product` / `technical_support` / `refund_request` / `account_issue` / `general` |
 | `priority` | `low` / `medium` / `high` |
 | `problem_resolved` | `true` / `false` |
 | `needs_followup` | `true` / `false` |

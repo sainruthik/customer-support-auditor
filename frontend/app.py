@@ -124,7 +124,7 @@ except error.URLError:
 
 complaints_df = pd.DataFrame(complaints)
 if not complaints_df.empty:
-    display_cols = ["created_at", "complaint_id", "topic", "customer_sentiment", "priority", "needs_followup", "summary"]
+    display_cols = ["created_at", "complaint_id", "complaint_text", "topic", "customer_sentiment", "priority", "needs_followup", "summary"]
     existing_cols = [c for c in display_cols if c in complaints_df.columns]
     st.dataframe(complaints_df[existing_cols], use_container_width=True)
 else:
@@ -212,7 +212,15 @@ if st.session_state.get("last_upload"):
 st.caption("Required column: `complaint_text`. Optional: `complaint_id`, `customer_id`, `channel`, `created_at`. Large files may take a minute while complaints are analyzed.")
 uploaded = st.file_uploader("Choose a CSV file", type=["csv"])
 if uploaded is not None:
-    if st.button("Upload and Analyze"):
+    st.warning(
+        "Uploading will **delete all existing complaints** from the database "
+        "before importing the new CSV. This cannot be undone."
+    )
+    confirm_wipe = st.checkbox(
+        "I understand — delete all existing complaints and import this CSV",
+        key="confirm_csv_wipe",
+    )
+    if st.button("Upload and Analyze", disabled=not confirm_wipe):
         with st.spinner("Clearing existing data and analyzing new complaints..."):
             try:
                 clear_complaints()

@@ -34,7 +34,10 @@ def _sentiment_agent(client: OpenAI, text: str) -> dict:
     )
     raw = _chat(client, system, text)
     data = json.loads(raw)
-    assert data["sentiment"] in {"positive", "negative", "neutral"}
+    if data.get("sentiment") not in {"positive", "negative", "neutral"}:
+        raise ValueError(
+            f"sentiment agent returned invalid label: {data.get('sentiment')!r}"
+        )
     return data
 
 
@@ -48,10 +51,14 @@ def _topic_agent(client: OpenAI, text: str) -> dict:
     )
     raw = _chat(client, system, text)
     data = json.loads(raw)
-    assert data["topic"] in {
+    allowed_topics = {
         "billing_issue", "delayed_delivery", "damaged_product",
         "technical_support", "refund_request", "account_issue", "general",
     }
+    if data.get("topic") not in allowed_topics:
+        raise ValueError(
+            f"topic agent returned invalid label: {data.get('topic')!r}"
+        )
     return data
 
 
@@ -64,7 +71,10 @@ def _priority_agent(client: OpenAI, text: str, sentiment: str, topic: str) -> di
     user = f"Complaint: {text}\nSentiment: {sentiment}\nTopic: {topic}"
     raw = _chat(client, system, user)
     data = json.loads(raw)
-    assert data["priority"] in {"low", "medium", "high"}
+    if data.get("priority") not in {"low", "medium", "high"}:
+        raise ValueError(
+            f"priority agent returned invalid label: {data.get('priority')!r}"
+        )
     return data
 
 
@@ -82,8 +92,10 @@ def _summary_agent(client: OpenAI, text: str, sentiment: str, topic: str, priori
     )
     raw = _chat(client, system, user)
     data = json.loads(raw)
-    assert isinstance(data["problem_resolved"], bool)
-    assert isinstance(data["needs_followup"], bool)
+    if not isinstance(data.get("problem_resolved"), bool):
+        raise ValueError("summary agent must return boolean problem_resolved")
+    if not isinstance(data.get("needs_followup"), bool):
+        raise ValueError("summary agent must return boolean needs_followup")
     return data
 
 
